@@ -21,12 +21,13 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           # 确保传递有权限的 token
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional customizations:
-          # commit-regex: '^(feat|fix|docs|style|refactor|test|chore|perf)(\(.+\))?: [A-Z].+'
-          # pr-title-regex: '^\[(Feature|Fix|Docs|Refactor|Test|Chore)\] .+'
-          # main-branch: 'main'
-          # model-name: 'gpt-4'
-          # skip-llm-check: 'false'
-          # skip-code-review: 'false'
-          # max-files-to-review: '10'
-          # review-threshold: '6'
+          # 可选配置：
+          # commit-regex: '^(feat|fix|docs|style|refactor|test|chore|perf)(\(.+\))?: [A-Z].+'  # 提交信息格式正则表达式
+          # pr-title-regex: '^\[(Feature|Fix|Docs|Refactor|Test|Chore)\] .+'  # PR 标题格式正则表达式
+          # main-branch: 'main'  # 主分支名称
+          # model-name: 'gpt-4'  # 使用的 OpenAI 模型
+          # skip-llm-check: 'false'  # 是否跳过 LLM 质量检查
+          # skip-code-review: 'false'  # 是否跳过代码审查
+          # max-files-to-review: '10'  # 最多审查的文件数量
+          # review-threshold: '6'  # 代码审查质量阈值 (1-10)
+          # ignore-commit-check: 'false'  # 设置为 'true' 时会忽略提交格式检查失败但仍显示警告

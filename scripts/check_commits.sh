@@ -6,9 +6,12 @@ COMMIT_REGEX=${COMMIT_REGEX:-'^(feat|fix|docs|style|refactor|test|chore|perf)(\(
 GITHUB_TOKEN=${GITHUB_TOKEN}
 PR_NUMBER=${PR_NUMBER}
 REPO_FULL_NAME=${REPO_FULL_NAME}
+IGNORE_COMMIT_CHECK=${IGNORE_COMMIT_CHECK:-"false"}
 
 # 输出调试信息
 echo "DEBUG: 检查 PR #${PR_NUMBER} 在仓库 ${REPO_FULL_NAME}"
+echo "DEBUG: 使用提交正则表达式: ${COMMIT_REGEX}"
+echo "DEBUG: 忽略提交检查失败: ${IGNORE_COMMIT_CHECK}"
 
 # 函数：发送 PR 评论
 post_comment() {
@@ -34,8 +37,10 @@ post_comment() {
     if [ $http_code -ne 201 ]; then
         echo "WARNING: 发送评论失败，状态码: ${http_code}"
         echo "响应: ${response%???}"
+        return 1
     else
         echo "INFO: 评论发送成功"
+        return 0
     fi
 }
 
@@ -127,9 +132,22 @@ ${COMMIT_REGEX}
 需要帮助？请参考 [Conventional Commits](https://www.conventionalcommits.org/) 规范。"
 
     # 发送评论
-    post_comment "$comment_text"
+    if ! post_comment "$comment_text"; then
+        echo "WARNING: 无法发送评论到 PR，但仍会显示不符合规范的提交信息"
+        echo ""
+        echo "===== 不符合规范的提交 ====="
+        echo -e "${INVALID_COMMITS}"
+        echo "============================"
+    fi
     
-    echo "❌ 提交信息格式检查失败。详细信息已添加到 PR 评论中。"
+    echo "❌ 提交信息格式检查失败。"
+    
+    # 如果设置了忽略提交检查失败，则以成功状态退出
+    if [ "$IGNORE_COMMIT_CHECK" = "true" ]; then
+        echo "INFO: 已设置忽略提交检查失败，继续执行"
+        exit 0
+    fi
+    
     exit 1
 else
     comment_text="## ✅ 提交信息格式检查通过
@@ -137,7 +155,9 @@ else
 所有 ${TOTAL_COMMITS} 个提交都符合规范要求。做得很好！"
     
     # 发送成功评论
-    post_comment "$comment_text"
+    if ! post_comment "$comment_text"; then
+        echo "WARNING: 无法发送评论到 PR，但提交检查已通过"
+    fi
     
     echo "✅ 所有提交信息格式正确。"
     exit 0

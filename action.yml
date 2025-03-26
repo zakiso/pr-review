@@ -44,6 +44,10 @@ inputs:
     description: 'GitHub token with permissions to comment on PRs'
     default: '${{ github.token }}'
     required: false
+  ignore-commit-check:
+    description: 'Ignore commit format check failures but still show warnings (set to "true" to ignore)'
+    default: 'false'
+    required: false
 
 runs:
   using: "composite"
@@ -88,6 +92,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO_FULL_NAME: ${{ github.repository }}
+        IGNORE_COMMIT_CHECK: ${{ inputs.ignore-commit-check }}
 
     - name: Check PR format
       shell: bash
