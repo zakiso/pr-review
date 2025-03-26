@@ -9,52 +9,7 @@ import os
 import sys
 import json
 import time
-import requests
 from openai import OpenAI
-
-def post_comment(comment):
-    """Post a comment to the PR"""
-    token = os.environ.get('GITHUB_TOKEN')
-    pr_number = os.environ.get('PR_NUMBER')
-    repo = os.environ.get('REPO_FULL_NAME')
-    
-    if not all([token, pr_number, repo]):
-        print("ERROR: 缺少必要的环境变量 (GITHUB_TOKEN, PR_NUMBER 或 REPO_FULL_NAME)")
-        return
-    
-    print(f"DEBUG: 发送评论到 PR #{pr_number} 在仓库 {repo}")
-    print(f"DEBUG: 使用的令牌 (前4位): {token[:4]}...")
-    
-    # 输出评论内容 (用于测试)
-    print("INFO: 将发送以下评论到 PR (如果有权限):")
-    print("---BEGIN COMMENT---")
-    print(comment[:200] + "..." if len(comment) > 200 else comment)
-    print("---END COMMENT---")
-    
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    headers = {
-        "Accept": "application/vnd.github.v3+json",
-        "Authorization": f"token {token}",
-        "Content-Type": "application/json"
-    }
-    data = {"body": comment}
-    
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        print(f"DEBUG: 响应状态码: {response.status_code}")
-        
-        if response.status_code == 201:
-            print("INFO: 评论成功发送")
-            return True
-            
-        response.raise_for_status()
-    except Exception as e:
-        print(f"ERROR: 发送评论失败: {e}")
-        if hasattr(e, 'response') and e.response:
-            print(f"响应状态: {e.response.status_code}")
-            print(f"响应内容: {e.response.text}")
-    
-    return False
 
 def evaluate_pr_with_llm(title, body):
     """Evaluate PR quality using OpenAI API"""
@@ -64,6 +19,11 @@ def evaluate_pr_with_llm(title, body):
 
     if not api_key:
         print("❌ Error: OPENAI_API_KEY environment variable is not set")
+        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+            f.write("llm_check_title=LLM 评估失败\n")
+            f.write("llm_check_summary=缺少 OpenAI API 密钥。\n")
+            f.write("llm_check_text=请配置 OPENAI_API_KEY 环境变量。\n")
+            f.write("llm_check_conclusion=failure\n")
         sys.exit(1)
     
     # Initialize OpenAI client
@@ -125,10 +85,15 @@ Respond with a JSON object containing:
             time.sleep(2)
     
     print("❌ Failed to get a valid response from the OpenAI API after multiple retries")
+    with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+        f.write("llm_check_title=LLM 评估失败\n")
+        f.write("llm_check_summary=无法获取有效的 LLM 响应。\n")
+        f.write("llm_check_text=在多次重试后仍无法从 OpenAI API 获取有效响应。请检查 API 连接和模型可用性。\n")
+        f.write("llm_check_conclusion=failure\n")
     sys.exit(1)
 
-def format_feedback_comment(result):
-    """Format the LLM feedback as a GitHub comment"""
+def format_feedback_text(result):
+    """Format the LLM feedback as a report text"""
     emoji_map = {
         1: "🚨", 2: "🚨", 3: "🚨", 4: "⚠️", 5: "⚠️",
         6: "👍", 7: "👍", 8: "✅", 9: "🌟", 10: "🌟"
@@ -137,7 +102,7 @@ def format_feedback_comment(result):
     score = result["quality_score"]
     emoji = emoji_map.get(score, "🔍")
     
-    comment = f"""
+    report_text = f"""
 ## {emoji} PR 质量评估
 
 **评分: {score}/10** - {result["explanation"]}
@@ -151,7 +116,7 @@ def format_feedback_comment(result):
 ---
 *此评估由 AI 生成，仅供参考。*
 """
-    return comment
+    return report_text
 
 def main():
     """Main function to validate PR using LLM"""
@@ -181,14 +146,23 @@ def main():
     
     print(f"\n🤖 评价: {evaluation['explanation']}")
     
-    # Post comment to GitHub if possible
-    formatted_comment = format_feedback_comment(evaluation)
-    comment_success = post_comment(formatted_comment)
+    # Format the feedback
+    report_text = format_feedback_text(evaluation)
     
-    if not comment_success:
-        print("\nWARNING: 无法发送评论到 PR，但将继续处理")
-        print("评论内容如下:\n")
-        print(formatted_comment)
+    # Set output variables for GitHub check
+    with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+        if evaluation['is_acceptable']:
+            f.write("llm_check_title=PR 质量评估通过\n")
+            f.write(f"llm_check_summary=PR 质量评分: {evaluation['quality_score']}/10，达到合格标准。\n")
+            f.write("llm_check_conclusion=success\n")
+        else:
+            f.write("llm_check_title=PR 质量评估未通过\n")
+            f.write(f"llm_check_summary=PR 质量评分: {evaluation['quality_score']}/10，未达到合格标准。\n")
+            f.write("llm_check_conclusion=failure\n")
+        
+        f.write("llm_check_text<<EOF\n")
+        f.write(f"{report_text}\n")
+        f.write("EOF\n")
     
     # Exit with appropriate status code
     if not evaluation['is_acceptable']:

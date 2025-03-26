@@ -82,59 +82,6 @@ def get_changed_files():
     
     return []
 
-def post_review_comment(body, path=None, line=None, side=None):
-    """Post a review comment to the PR"""
-    token = os.environ.get('GITHUB_TOKEN')
-    pr_number = os.environ.get('PR_NUMBER')
-    repo = os.environ.get('REPO_FULL_NAME')
-    
-    if not all([token, pr_number, repo]):
-        print("ERROR: 缺少必要的环境变量")
-        return False
-    
-    print(f"DEBUG: 发送评论到 PR #{pr_number}")
-    
-    # 输出评论内容 (用于调试)
-    print("INFO: 将发送以下评论到 PR (如果有权限):")
-    print("---BEGIN COMMENT---")
-    print(body[:200] + "..." if len(body) > 200 else body)
-    print("---END COMMENT---")
-    
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    headers = {
-        "Accept": "application/vnd.github.v3+json",
-        "Authorization": f"token {token}",
-        "Content-Type": "application/json"
-    }
-    
-    # 如果没有指定文件和行号，发送一般性评论
-    if not all([path, line]):
-        data = {
-            "body": body
-        }
-    else:
-        # 对于行内评论，我们需要使用 issue_comment API 而不是 review API
-        data = {
-            "body": f"**文件: {path}, 行 {line}**\n\n{body}"
-        }
-    
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        print(f"DEBUG: 响应状态码: {response.status_code}")
-        
-        if response.status_code == 201:
-            print("INFO: 评论发送成功")
-            return True
-            
-        response.raise_for_status()
-    except Exception as e:
-        print(f"ERROR: 发送评论失败: {e}")
-        if hasattr(e, 'response') and e.response:
-            print(f"响应状态: {e.response.status_code}")
-            print(f"响应内容: {e.response.text}")
-    
-    return False
-
 def review_code_with_llm(file_content, file_name):
     """使用 LLM 审查代码"""
     api_key = os.environ.get('OPENAI_API_KEY')
@@ -202,8 +149,8 @@ def review_code_with_llm(file_content, file_name):
     
     return None
 
-def format_review_comment(file_name, review_result):
-    """格式化审查结果为 Markdown 格式"""
+def format_review_for_file(file_name, review_result):
+    """格式化单个文件的审查结果为 Markdown 格式"""
     if not review_result:
         return f"⚠️ 未能成功审查 {file_name}"
     
@@ -221,7 +168,7 @@ def format_review_comment(file_name, review_result):
         "low": "🟢"
     }
     
-    comment = f"""
+    text = f"""
 ## 代码审查结果: {file_name}
 
 ### 总体评分: {review_result['score']}/10
@@ -236,18 +183,17 @@ def format_review_comment(file_name, review_result):
     
     if review_result['issues']:
         for issue in review_result['issues']:
-            comment += f"""
+            text += f"""
 #### {emoji_map.get(issue['type'], '❓')} {severity_map.get(issue['severity'], '❓')} {issue['type'].title()}
 - **描述**: {issue['description']}
 - **建议**: {issue['suggestion']}
 """
             if issue.get('line_number'):
-                comment += f"- **位置**: 第 {issue['line_number']} 行\n"
+                text += f"- **位置**: 第 {issue['line_number']} 行\n"
     else:
-        comment += "\n没有发现重要问题。\n"
+        text += "\n没有发现重要问题。\n"
     
-    comment += "\n---\n*此代码审查由 AI 辅助完成，仅供参考。*"
-    return comment
+    return text
 
 def main():
     """主函数"""
@@ -262,11 +208,17 @@ def main():
     total_issues = 0
     high_severity_issues = 0
     max_files = int(os.environ.get('MAX_FILES_TO_REVIEW', 10))
+    review_threshold = int(os.environ.get('REVIEW_THRESHOLD', 6))
     
-    print(f"DEBUG: 将审查最多 {max_files} 个文件")
+    print(f"DEBUG: 将审查最多 {max_files} 个文件，质量阈值: {review_threshold}")
+    
+    # 初始化审查报告
+    file_reviews = []
+    issue_details = []
+    reviewed_files = 0
+    low_quality_files = 0
     
     # 对每个更改的文件进行审查
-    reviewed_files = 0
     for file in changed_files[:max_files]:
         file_name = file['filename']
         print(f"📝 正在审查文件: {file_name}")
@@ -302,34 +254,74 @@ def main():
                                  if issue['severity'] == 'high')
             high_severity_issues += file_high_issues
             
+            # 如果得分低于阈值，计为低质量文件
+            if review_result['score'] < review_threshold:
+                low_quality_files += 1
+            
             print(f"INFO: 发现 {file_issues} 个问题，其中 {file_high_issues} 个高严重性问题")
             
-            # 发送审查评论
-            comment = format_review_comment(file_name, review_result)
-            post_result = post_review_comment(comment)
+            # 添加到审查报告
+            review_text = format_review_for_file(file_name, review_result)
+            file_reviews.append(review_text)
             
-            if not post_result:
-                print(f"WARNING: 无法发送文件 {file_name} 的审查结果")
+            # 添加问题详情
+            for issue in review_result['issues']:
+                issue_details.append({
+                    'file': file_name,
+                    'type': issue['type'],
+                    'severity': issue['severity'],
+                    'description': issue['description'],
+                    'suggestion': issue['suggestion'],
+                    'line_number': issue.get('line_number')
+                })
     
-    # 发送总结评论
-    summary = f"""
+    # 准备总结报告
+    if reviewed_files == 0:
+        summary = "未能审查任何文件。"
+        conclusion = "neutral"
+        title = "代码审查未运行"
+    else:
+        # 确定整体结论
+        if high_severity_issues > 0 or low_quality_files > 0:
+            conclusion = "failure"
+            title = "代码审查发现问题"
+            summary = f"发现 {high_severity_issues} 个高严重性问题，{low_quality_files} 个低质量文件。"
+        else:
+            conclusion = "success"
+            title = "代码审查通过"
+            summary = f"审查了 {reviewed_files} 个文件，无高严重性问题。"
+    
+    # 生成最终报告
+    report_text = f"""
 # 代码审查总结
 
 - 审查的文件数: {reviewed_files}
 - 发现的问题总数: {total_issues}
 - 高严重性问题: {high_severity_issues}
+- 低质量文件数: {low_quality_files}
 
 {'⚠️ 发现高严重性问题，请在合并前解决。' if high_severity_issues > 0 else '✅ 没有发现高严重性问题。'}
+
+## 审查详情
+
+{chr(10).join(file_reviews)}
+
+---
+*此代码审查由 AI 辅助完成，仅供参考。*
 """
-    summary_result = post_review_comment(summary)
-    if not summary_result:
-        print("WARNING: 无法发送审查总结评论")
-        print("审查总结内容如下:\n")
-        print(summary)
+    
+    # 设置输出变量
+    with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+        f.write(f"code_review_title={title}\n")
+        f.write(f"code_review_summary={summary}\n")
+        f.write("code_review_text<<EOF\n")
+        f.write(f"{report_text}\n")
+        f.write("EOF\n")
+        f.write(f"code_review_conclusion={conclusion}\n")
     
     # 如果有高严重性问题，以非零状态退出
     if high_severity_issues > 0:
-        print(f"❌ 发现 {high_severity_issues} 个高严重性问题，请查看 PR 评论获取详细信息。")
+        print(f"❌ 发现 {high_severity_issues} 个高严重性问题。")
         sys.exit(1)
     else:
         print("✅ 代码审查完成。")

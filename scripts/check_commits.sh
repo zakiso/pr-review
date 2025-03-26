@@ -13,37 +13,6 @@ echo "DEBUG: 检查 PR #${PR_NUMBER} 在仓库 ${REPO_FULL_NAME}"
 echo "DEBUG: 使用提交正则表达式: ${COMMIT_REGEX}"
 echo "DEBUG: 忽略提交检查失败: ${IGNORE_COMMIT_CHECK}"
 
-# 函数：发送 PR 评论
-post_comment() {
-    local comment="$1"
-    local api_url="https://api.github.com/repos/${REPO_FULL_NAME}/issues/${PR_NUMBER}/comments"
-    
-    # 直接输出要发送的评论 (用于测试)
-    echo "INFO: 将发送以下评论到 PR (如果有权限):"
-    echo "---BEGIN COMMENT---"
-    echo "$comment"
-    echo "---END COMMENT---"
-    
-    # 尝试发送评论
-    echo "DEBUG: 发送评论到 $api_url"
-    response=$(curl -s -w "%{http_code}" -X POST \
-        -H "Authorization: token ${GITHUB_TOKEN}" \
-        -H "Accept: application/vnd.github.v3+json" \
-        -H "Content-Type: application/json" \
-        -d "{\"body\": $(echo "$comment" | jq -R -s .)}" \
-        "$api_url")
-    
-    http_code=${response: -3}
-    if [ $http_code -ne 201 ]; then
-        echo "WARNING: 发送评论失败，状态码: ${http_code}"
-        echo "响应: ${response%???}"
-        return 1
-    else
-        echo "INFO: 评论发送成功"
-        return 0
-    fi
-}
-
 echo "🔍 检查提交信息格式..."
 
 # 使用 GitHub REST API 获取 PR 中的所有提交
@@ -55,6 +24,13 @@ COMMITS_JSON=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 # 检查 API 调用是否成功并输出调试信息
 if [[ "$COMMITS_JSON" == *"Not Found"* ]] || [[ "$COMMITS_JSON" == *"Bad credentials"* ]]; then
     echo "❌ 获取提交信息失败: $COMMITS_JSON"
+    
+    # 设置输出变量
+    echo "commit_check_title=提交信息获取失败" >> $GITHUB_OUTPUT
+    echo "commit_check_summary=无法获取 PR 中的提交信息。" >> $GITHUB_OUTPUT
+    echo "commit_check_text=API 返回错误：$COMMITS_JSON" >> $GITHUB_OUTPUT
+    echo "commit_check_conclusion=failure" >> $GITHUB_OUTPUT
+    
     exit 1
 fi
 
@@ -95,15 +71,22 @@ else
     # 如果不是数组，可能是错误消息
     echo "❌ API 返回非数组结构，可能是错误。请检查 GITHUB_TOKEN 权限。"
     echo "$COMMITS_JSON" | jq '.'
+    
+    # 设置输出变量
+    echo "commit_check_title=提交信息解析失败" >> $GITHUB_OUTPUT
+    echo "commit_check_summary=API 返回的数据结构不正确。" >> $GITHUB_OUTPUT
+    echo "commit_check_text=API 返回了非数组结构：\`\`\`json\n$COMMITS_JSON\n\`\`\`" >> $GITHUB_OUTPUT
+    echo "commit_check_conclusion=failure" >> $GITHUB_OUTPUT
+    
     exit 1
 fi
 
 echo "DEBUG: 检查完成。总提交数: $TOTAL_COMMITS, 不符合规范: $INVALID_COUNT"
 
-# 如果有无效的提交，发送评论并退出
+# 如果有无效的提交，创建失败检查结果
 if [ $INVALID_COUNT -gt 0 ]; then
-    # 准备评论内容
-    comment_text="## ❌ 提交信息格式检查失败
+    # 准备报告内容
+    report_text="## 提交信息格式检查失败
 
 发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。
 
@@ -131,14 +114,13 @@ ${COMMIT_REGEX}
 
 需要帮助？请参考 [Conventional Commits](https://www.conventionalcommits.org/) 规范。"
 
-    # 发送评论
-    if ! post_comment "$comment_text"; then
-        echo "WARNING: 无法发送评论到 PR，但仍会显示不符合规范的提交信息"
-        echo ""
-        echo "===== 不符合规范的提交 ====="
-        echo -e "${INVALID_COMMITS}"
-        echo "============================"
-    fi
+    # 设置输出变量
+    echo "commit_check_title=提交信息格式检查失败" >> $GITHUB_OUTPUT
+    echo "commit_check_summary=发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。" >> $GITHUB_OUTPUT
+    echo "commit_check_text<<EOF" >> $GITHUB_OUTPUT
+    echo "$report_text" >> $GITHUB_OUTPUT
+    echo "EOF" >> $GITHUB_OUTPUT
+    echo "commit_check_conclusion=failure" >> $GITHUB_OUTPUT
     
     echo "❌ 提交信息格式检查失败。"
     
@@ -150,14 +132,18 @@ ${COMMIT_REGEX}
     
     exit 1
 else
-    comment_text="## ✅ 提交信息格式检查通过
+    # 准备成功报告内容
+    report_text="## 提交信息格式检查通过
 
 所有 ${TOTAL_COMMITS} 个提交都符合规范要求。做得很好！"
-    
-    # 发送成功评论
-    if ! post_comment "$comment_text"; then
-        echo "WARNING: 无法发送评论到 PR，但提交检查已通过"
-    fi
+
+    # 设置输出变量
+    echo "commit_check_title=提交信息格式检查通过" >> $GITHUB_OUTPUT
+    echo "commit_check_summary=所有 ${TOTAL_COMMITS} 个提交都符合规范要求。" >> $GITHUB_OUTPUT
+    echo "commit_check_text<<EOF" >> $GITHUB_OUTPUT
+    echo "$report_text" >> $GITHUB_OUTPUT
+    echo "EOF" >> $GITHUB_OUTPUT
+    echo "commit_check_conclusion=success" >> $GITHUB_OUTPUT
     
     echo "✅ 所有提交信息格式正确。"
     exit 0
