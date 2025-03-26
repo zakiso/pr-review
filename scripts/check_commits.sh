@@ -21,11 +21,15 @@ post_comment() {
 
 echo "🔍 检查提交信息格式..."
 
-# 获取 PR 中的所有提交
-COMMITS=$(gh pr view ${PR_NUMBER} --json commits --jq '.commits[].oid')
-if [ -z "$COMMITS" ]; then
-    echo "⚠️ 未找到任何提交"
-    exit 0
+# 使用 GitHub REST API 获取 PR 中的所有提交
+COMMITS_JSON=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  "https://api.github.com/repos/${REPO_FULL_NAME}/pulls/${PR_NUMBER}/commits")
+
+# 检查 API 调用是否成功
+if [ $? -ne 0 ] || [[ $COMMITS_JSON == *"message"*"Not Found"* ]]; then
+    echo "❌ 获取提交信息失败"
+    exit 1
 fi
 
 # 初始化错误信息
@@ -33,21 +37,17 @@ INVALID_COMMITS=""
 TOTAL_COMMITS=0
 INVALID_COUNT=0
 
-# 检查每个提交
-while IFS= read -r commit_hash; do
+# 使用 jq 解析 JSON 并检查每个提交
+echo "$COMMITS_JSON" | jq -r '.[] | "\(.sha) \(.commit.message | split("\n")[0]) \(.commit.author.name)"' | while read -r commit_hash commit_msg author; do
     ((TOTAL_COMMITS++))
     
-    # 获取提交信息
-    COMMIT_MSG=$(git log -1 --format=%s ${commit_hash})
-    COMMIT_AUTHOR=$(git log -1 --format=%an ${commit_hash})
-    
     # 验证提交信息格式
-    if [[ ! "$COMMIT_MSG" =~ $COMMIT_REGEX ]]; then
+    if [[ ! "$commit_msg" =~ $COMMIT_REGEX ]]; then
         ((INVALID_COUNT++))
         INVALID_COMMITS="${INVALID_COMMITS}
-- [\`${commit_hash:0:7}\`](https://github.com/${REPO_FULL_NAME}/commit/${commit_hash}) by ${COMMIT_AUTHOR}: \`${COMMIT_MSG}\`"
+- [\`${commit_hash:0:7}\`](https://github.com/${REPO_FULL_NAME}/commit/${commit_hash}) by ${author}: \`${commit_msg}\`"
     fi
-done <<< "$COMMITS"
+done
 
 # 如果有无效的提交，发送评论并退出
 if [ $INVALID_COUNT -gt 0 ]; then
