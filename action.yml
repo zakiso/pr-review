@@ -54,6 +54,16 @@ runs:
       with:
         python-version: '3.10'
 
+    - name: Install GitHub CLI
+      shell: bash
+      run: |
+        type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+        && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        && sudo apt update \
+        && sudo apt install gh -y
+
     - name: Install dependencies
       shell: bash
       run: |
@@ -66,7 +76,9 @@ runs:
       run: bash ${{ github.action_path }}/scripts/check_commits.sh
       env:
         COMMIT_REGEX: ${{ inputs.commit-regex }}
-        MAIN_BRANCH: ${{ inputs.main-branch }}
+        GITHUB_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO_FULL_NAME: ${{ github.repository }}
 
     - name: Check PR format
       shell: bash
