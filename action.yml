@@ -95,14 +95,7 @@ runs:
     - name: Check commit messages
       id: check_commits
       shell: bash
-      run: |
-        bash ${{ github.action_path }}/scripts/check_commits.sh
-        # 在这里直接进行提交检查结果的报告
-        python ${{ github.action_path }}/scripts/report_check.py \
-          --title "${commit_check_title:-提交检查}" \
-          --summary "${commit_check_summary:-验证了提交信息格式。}" \
-          --text "${commit_check_text:-没有详细的检查信息。}" \
-          --conclusion "${commit_check_conclusion:-neutral}"
+      run: bash ${{ github.action_path }}/scripts/check_commits.sh
       env:
         COMMIT_REGEX: ${{ inputs.commit-regex }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
@@ -112,18 +105,11 @@ runs:
         GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         CHECK_NAME: 'Commit Format Check'
 
-    # PR格式检查
+    # PR格式检查，可以模仿提交检查做同样的修改
     - name: Check PR format
       id: check_pr
       shell: bash
-      run: |
-        python ${{ github.action_path }}/scripts/check_pr.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
-        # 在这里直接进行PR检查结果的报告
-        python ${{ github.action_path }}/scripts/report_check.py \
-          --title "${pr_check_title:-PR格式检查}" \
-          --summary "${pr_check_summary:-验证了PR的格式。}" \
-          --text "${pr_check_text:-没有详细的检查信息。}" \
-          --conclusion "${pr_check_conclusion:-neutral}"
+      run: python ${{ github.action_path }}/scripts/check_pr.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
       env:
         PR_TITLE_REGEX: ${{ inputs.pr-title-regex }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
@@ -137,14 +123,7 @@ runs:
       if: inputs.skip-llm-check != 'true'
       id: llm_check
       shell: bash
-      run: |
-        python ${{ github.action_path }}/scripts/llm_check.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
-        # 在这里直接进行LLM检查结果的报告
-        python ${{ github.action_path }}/scripts/report_check.py \
-          --title "${llm_check_title:-PR质量评估}" \
-          --summary "${llm_check_summary:-评估了PR的质量。}" \
-          --text "${llm_check_text:-没有详细的评估信息。}" \
-          --conclusion "${llm_check_conclusion:-neutral}"
+      run: python ${{ github.action_path }}/scripts/llm_check.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         MODEL_NAME: ${{ inputs.model-name }}
@@ -159,14 +138,7 @@ runs:
       if: inputs.skip-code-review != 'true'
       id: code_review
       shell: bash
-      run: |
-        python ${{ github.action_path }}/scripts/code_review.py
-        # 在这里直接进行代码审查结果的报告
-        python ${{ github.action_path }}/scripts/report_check.py \
-          --title "${code_review_title:-代码审查}" \
-          --summary "${code_review_summary:-审查了代码变更。}" \
-          --text "${code_review_text:-没有详细的审查信息。}" \
-          --conclusion "${code_review_conclusion:-neutral}"
+      run: python ${{ github.action_path }}/scripts/code_review.py
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         MODEL_NAME: ${{ inputs.model-name }}

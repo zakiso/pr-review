@@ -9,7 +9,32 @@ import os
 import sys
 import json
 import time
+import subprocess
+from pathlib import Path
 from openai import OpenAI
+
+def call_report_check(title, summary, text, conclusion):
+    """调用 report_check.py 生成报告"""
+    script_dir = Path(__file__).parent
+    report_script = script_dir / "report_check.py"
+    
+    # 确保报告脚本存在
+    if not report_script.exists():
+        print(f"ERROR: 找不到报告脚本: {report_script}")
+        return False
+    
+    try:
+        subprocess.run([
+            "python", str(report_script),
+            "--title", title,
+            "--summary", summary,
+            "--text", text,
+            "--conclusion", conclusion
+        ], check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: 调用报告脚本失败: {e}")
+        return False
 
 def evaluate_pr_with_llm(title, body):
     """Evaluate PR quality using OpenAI API"""
@@ -19,11 +44,13 @@ def evaluate_pr_with_llm(title, body):
 
     if not api_key:
         print("❌ Error: OPENAI_API_KEY environment variable is not set")
-        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-            f.write("llm_check_title=LLM 评估失败\n")
-            f.write("llm_check_summary=缺少 OpenAI API 密钥。\n")
-            f.write("llm_check_text=请配置 OPENAI_API_KEY 环境变量。\n")
-            f.write("llm_check_conclusion=failure\n")
+        # 直接调用 report_check.py 报告错误
+        call_report_check(
+            "LLM 评估失败", 
+            "缺少 OpenAI API 密钥。", 
+            "请配置 OPENAI_API_KEY 环境变量。", 
+            "failure"
+        )
         sys.exit(1)
     
     # Initialize OpenAI client
@@ -85,11 +112,13 @@ Respond with a JSON object containing:
             time.sleep(2)
     
     print("❌ Failed to get a valid response from the OpenAI API after multiple retries")
-    with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-        f.write("llm_check_title=LLM 评估失败\n")
-        f.write("llm_check_summary=无法获取有效的 LLM 响应。\n")
-        f.write("llm_check_text=在多次重试后仍无法从 OpenAI API 获取有效响应。请检查 API 连接和模型可用性。\n")
-        f.write("llm_check_conclusion=failure\n")
+    # 直接调用 report_check.py 报告错误
+    call_report_check(
+        "LLM 评估失败", 
+        "无法获取有效的 LLM 响应。", 
+        "在多次重试后仍无法从 OpenAI API 获取有效响应。请检查 API 连接和模型可用性。", 
+        "failure"
+    )
     sys.exit(1)
 
 def format_feedback_text(result):
@@ -149,20 +178,18 @@ def main():
     # Format the feedback
     report_text = format_feedback_text(evaluation)
     
-    # Set output variables for GitHub check
-    with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-        if evaluation['is_acceptable']:
-            f.write("llm_check_title=PR 质量评估通过\n")
-            f.write(f"llm_check_summary=PR 质量评分: {evaluation['quality_score']}/10，达到合格标准。\n")
-            f.write("llm_check_conclusion=success\n")
-        else:
-            f.write("llm_check_title=PR 质量评估未通过\n")
-            f.write(f"llm_check_summary=PR 质量评分: {evaluation['quality_score']}/10，未达到合格标准。\n")
-            f.write("llm_check_conclusion=failure\n")
-        
-        f.write("llm_check_text<<EOF\n")
-        f.write(f"{report_text}\n")
-        f.write("EOF\n")
+    # 准备检查结果参数
+    if evaluation['is_acceptable']:
+        title = "PR 质量评估通过"
+        summary = f"PR 质量评分: {evaluation['quality_score']}/10，达到合格标准。"
+        conclusion = "success"
+    else:
+        title = "PR 质量评估未通过"
+        summary = f"PR 质量评分: {evaluation['quality_score']}/10，未达到合格标准。"
+        conclusion = "failure"
+    
+    # 直接调用 report_check.py
+    call_report_check(title, summary, report_text, conclusion)
     
     # Exit with appropriate status code
     if not evaluation['is_acceptable']:

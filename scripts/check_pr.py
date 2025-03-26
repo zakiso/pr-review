@@ -9,6 +9,31 @@ import os
 import re
 import sys
 import json
+import subprocess
+from pathlib import Path
+
+def call_report_check(title, summary, text, conclusion):
+    """调用 report_check.py 生成报告"""
+    script_dir = Path(__file__).parent
+    report_script = script_dir / "report_check.py"
+    
+    # 确保报告脚本存在
+    if not report_script.exists():
+        print(f"ERROR: 找不到报告脚本: {report_script}")
+        return False
+    
+    try:
+        subprocess.run([
+            "python", str(report_script),
+            "--title", title,
+            "--summary", summary,
+            "--text", text,
+            "--conclusion", conclusion
+        ], check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: 调用报告脚本失败: {e}")
+        return False
 
 def check_pr_title(title):
     """Check if PR title matches the required pattern"""
@@ -121,14 +146,8 @@ def main():
         
         print("❌ PR 格式验证失败。请修复上述问题。")
         
-        # 设置输出变量
-        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-            f.write(f"pr_check_title={title}\n")
-            f.write(f"pr_check_summary={summary}\n")
-            f.write("pr_check_text<<EOF\n")
-            f.write(f"{text}\n")
-            f.write("EOF\n")
-            f.write(f"pr_check_conclusion={conclusion}\n")
+        # 直接调用 report_check.py
+        call_report_check(title, summary, text, conclusion)
         
         sys.exit(1)
     else:
@@ -144,14 +163,8 @@ def main():
         
         print("✅ PR 格式验证通过。")
         
-        # 设置输出变量
-        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-            f.write(f"pr_check_title={title}\n")
-            f.write(f"pr_check_summary={summary}\n")
-            f.write("pr_check_text<<EOF\n")
-            f.write(f"{text}\n")
-            f.write("EOF\n")
-            f.write(f"pr_check_conclusion={conclusion}\n")
+        # 直接调用 report_check.py
+        call_report_check(title, summary, text, conclusion)
         
         sys.exit(0)
 

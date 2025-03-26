@@ -7,6 +7,8 @@ GITHUB_TOKEN=${GITHUB_TOKEN}
 PR_NUMBER=${PR_NUMBER}
 REPO_FULL_NAME=${REPO_FULL_NAME}
 IGNORE_COMMIT_CHECK=${IGNORE_COMMIT_CHECK:-"false"}
+GITHUB_SHA=${GITHUB_SHA}
+CHECK_NAME=${CHECK_NAME:-"Commit Format Check"}
 
 # 输出调试信息
 echo "DEBUG: 检查 PR #${PR_NUMBER} 在仓库 ${REPO_FULL_NAME}"
@@ -25,11 +27,12 @@ COMMITS_JSON=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 if [[ "$COMMITS_JSON" == *"Not Found"* ]] || [[ "$COMMITS_JSON" == *"Bad credentials"* ]]; then
     echo "❌ 获取提交信息失败: $COMMITS_JSON"
     
-    # 直接设置环境变量供后续使用
-    export commit_check_title="提交信息获取失败"
-    export commit_check_summary="无法获取 PR 中的提交信息。"
-    export commit_check_text="API 返回错误：$COMMITS_JSON"
-    export commit_check_conclusion="failure"
+    # 直接调用 report_check.py
+    python "$(dirname "$0")/report_check.py" \
+      --title "提交信息获取失败" \
+      --summary "无法获取 PR 中的提交信息。" \
+      --text "API 返回错误：$COMMITS_JSON" \
+      --conclusion "failure"
     
     exit 1
 fi
@@ -72,11 +75,14 @@ else
     echo "❌ API 返回非数组结构，可能是错误。请检查 GITHUB_TOKEN 权限。"
     echo "$COMMITS_JSON" | jq '.'
     
-    # 直接设置环境变量供后续使用
-    export commit_check_title="提交信息解析失败"
-    export commit_check_summary="API 返回的数据结构不正确。"
-    export commit_check_text="API 返回了非数组结构：\`\`\`json\n$COMMITS_JSON\n\`\`\`"
-    export commit_check_conclusion="failure"
+    # 直接调用 report_check.py
+    python "$(dirname "$0")/report_check.py" \
+      --title "提交信息解析失败" \
+      --summary "API 返回的数据结构不正确。" \
+      --text "API 返回了非数组结构：\`\`\`json
+$COMMITS_JSON
+\`\`\`" \
+      --conclusion "failure"
     
     exit 1
 fi
@@ -114,11 +120,12 @@ ${COMMIT_REGEX}
 
 需要帮助？请参考 [Conventional Commits](https://www.conventionalcommits.org/) 规范。"
 
-    # 直接设置环境变量供后续使用
-    export commit_check_title="提交信息格式检查失败"
-    export commit_check_summary="发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。"
-    export commit_check_text="$report_text"
-    export commit_check_conclusion="failure"
+    # 直接调用 report_check.py
+    python "$(dirname "$0")/report_check.py" \
+      --title "提交信息格式检查失败" \
+      --summary "发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。" \
+      --text "$report_text" \
+      --conclusion "failure"
     
     echo "❌ 提交信息格式检查失败。"
     
@@ -135,11 +142,12 @@ else
 
 所有 ${TOTAL_COMMITS} 个提交都符合规范要求。做得很好！"
 
-    # 直接设置环境变量供后续使用
-    export commit_check_title="提交信息格式检查通过"
-    export commit_check_summary="所有 ${TOTAL_COMMITS} 个提交都符合规范要求。"
-    export commit_check_text="$report_text"
-    export commit_check_conclusion="success"
+    # 直接调用 report_check.py
+    python "$(dirname "$0")/report_check.py" \
+      --title "提交信息格式检查通过" \
+      --summary "所有 ${TOTAL_COMMITS} 个提交都符合规范要求。" \
+      --text "$report_text" \
+      --conclusion "success"
     
     echo "✅ 所有提交信息格式正确。"
     exit 0

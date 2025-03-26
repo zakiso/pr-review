@@ -11,6 +11,8 @@ import json
 import time
 import requests
 from openai import OpenAI
+from pathlib import Path
+import subprocess
 
 def get_pr_diff():
     """Fetch the PR diff from GitHub API"""
@@ -195,6 +197,29 @@ def format_review_for_file(file_name, review_result):
     
     return text
 
+def call_report_check(title, summary, text, conclusion):
+    """调用 report_check.py 生成报告"""
+    script_dir = Path(__file__).parent
+    report_script = script_dir / "report_check.py"
+    
+    # 确保报告脚本存在
+    if not report_script.exists():
+        print(f"ERROR: 找不到报告脚本: {report_script}")
+        return False
+    
+    try:
+        subprocess.run([
+            "python", str(report_script),
+            "--title", title,
+            "--summary", summary,
+            "--text", text,
+            "--conclusion", conclusion
+        ], check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: 调用报告脚本失败: {e}")
+        return False
+
 def main():
     """主函数"""
     print("🔍 开始代码审查...")
@@ -310,14 +335,13 @@ def main():
 *此代码审查由 AI 辅助完成，仅供参考。*
 """
     
-    # 设置输出变量
-    with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-        f.write(f"code_review_title={title}\n")
-        f.write(f"code_review_summary={summary}\n")
-        f.write("code_review_text<<EOF\n")
-        f.write(f"{report_text}\n")
-        f.write("EOF\n")
-        f.write(f"code_review_conclusion={conclusion}\n")
+    # 直接调用 report_check.py
+    call_report_check(
+        title=title,
+        summary=summary,
+        text=report_text,
+        conclusion=conclusion
+    )
     
     # 如果有高严重性问题，以非零状态退出
     if high_severity_issues > 0:
