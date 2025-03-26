@@ -1,0 +1,102 @@
+name: 'PR & Commit Format Validator'
+description: 'Validate Pull Request and Commit message formats using rules and LLM analysis'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  openai-api-key:
+    description: 'OpenAI API Key for LLM validation'
+    required: true
+  commit-regex:
+    description: 'Regex pattern to validate commit messages'
+    default: '^(feat|fix|docs|style|refactor|test|chore|perf)(\(.+\))?: [A-Z].+'
+    required: false
+  pr-title-regex:
+    description: 'Regex pattern to validate PR titles'
+    default: '^\[(Feature|Fix|Docs|Refactor|Test|Chore)\] .+'
+    required: false
+  main-branch:
+    description: 'Name of the main branch to compare commits against'
+    default: 'main'
+    required: false
+  model-name:
+    description: 'OpenAI model to use for validation'
+    default: 'gpt-4'
+    required: false
+  skip-llm-check:
+    description: 'Skip LLM validation (set to "true" to skip)'
+    default: 'false'
+    required: false
+  skip-code-review:
+    description: 'Skip code review (set to "true" to skip)'
+    default: 'false'
+    required: false
+  max-files-to-review:
+    description: 'Maximum number of files to review in a PR'
+    default: '10'
+    required: false
+  review-threshold:
+    description: 'Minimum score (1-10) required to pass code review'
+    default: '6'
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install openai requests
+
+    - name: Check commit messages
+      shell: bash
+      run: bash ${{ github.action_path }}/scripts/check_commits.sh
+      env:
+        COMMIT_REGEX: ${{ inputs.commit-regex }}
+        MAIN_BRANCH: ${{ inputs.main-branch }}
+
+    - name: Check PR format
+      shell: bash
+      run: python ${{ github.action_path }}/scripts/check_pr.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
+      env:
+        PR_TITLE_REGEX: ${{ inputs.pr-title-regex }}
+        GITHUB_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO_FULL_NAME: ${{ github.repository }}
+
+    - name: LLM validation
+      if: inputs.skip-llm-check != 'true'
+      shell: bash
+      run: python ${{ github.action_path }}/scripts/llm_check.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        MODEL_NAME: ${{ inputs.model-name }}
+        GITHUB_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO_FULL_NAME: ${{ github.repository }}
+
+    - name: Code Review
+      if: inputs.skip-code-review != 'true'
+      shell: bash
+      run: python ${{ github.action_path }}/scripts/code_review.py
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        MODEL_NAME: ${{ inputs.model-name }}
+        GITHUB_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO_FULL_NAME: ${{ github.repository }}
+        MAX_FILES_TO_REVIEW: ${{ inputs.max-files-to-review }}
+        REVIEW_THRESHOLD: ${{ inputs.review-threshold }}

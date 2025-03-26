@@ -1,0 +1,24 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR & Commit Format Validation
+        uses: your-username/pr-check-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # Optional customizations:
+          # commit-regex: '^(feat|fix|docs|style|refactor|test|chore|perf)(\(.+\))?: [A-Z].+'
+          # pr-title-regex: '^\[(Feature|Fix|Docs|Refactor|Test|Chore)\] .+'
+          # main-branch: 'main'
+          # model-name: 'gpt-4'
+          # skip-llm-check: 'false'
+          # skip-code-review: 'false'
+          # max-files-to-review: '10'
+          # review-threshold: '6'
