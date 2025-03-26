@@ -12,11 +12,20 @@ post_comment() {
     local comment="$1"
     local api_url="https://api.github.com/repos/${REPO_FULL_NAME}/issues/${PR_NUMBER}/comments"
     
-    curl -s -X POST \
+    # 确保评论内容被正确转义为 JSON
+    local json_body=$(echo "$comment" | jq -R -s '{body: .}')
+    
+    response=$(curl -s -w "%{http_code}" -X POST \
         -H "Authorization: token ${GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github.v3+json" \
-        -d "{\"body\": ${comment}}" \
-        "${api_url}" > /dev/null
+        -d "${json_body}" \
+        "${api_url}")
+    
+    http_code=${response: -3}
+    if [ $http_code -ne 201 ]; then
+        echo "Warning: Failed to post comment to PR. Status code: ${http_code}"
+        echo "Response: ${response%???}"
+    fi
 }
 
 echo "🔍 检查提交信息格式..."
@@ -38,7 +47,16 @@ TOTAL_COMMITS=0
 INVALID_COUNT=0
 
 # 使用 jq 解析 JSON 并检查每个提交
-echo "$COMMITS_JSON" | jq -r '.[] | "\(.sha) \(.commit.message | split("\n")[0]) \(.commit.author.name)"' | while read -r commit_hash commit_msg author; do
+while read -r line; do
+    if [ -z "$line" ]; then
+        continue
+    fi
+    
+    # 解析每一行的数据
+    commit_hash=$(echo "$line" | cut -d' ' -f1)
+    author=$(echo "$line" | cut -d' ' -f2)
+    commit_msg=$(echo "$line" | cut -d' ' -f3-)
+    
     ((TOTAL_COMMITS++))
     
     # 验证提交信息格式
@@ -47,14 +65,12 @@ echo "$COMMITS_JSON" | jq -r '.[] | "\(.sha) \(.commit.message | split("\n")[0])
         INVALID_COMMITS="${INVALID_COMMITS}
 - [\`${commit_hash:0:7}\`](https://github.com/${REPO_FULL_NAME}/commit/${commit_hash}) by ${author}: \`${commit_msg}\`"
     fi
-done
+done < <(echo "$COMMITS_JSON" | jq -r '.[] | "\(.sha) \(.commit.author.name) \(.commit.message | split("\n")[0])"')
 
 # 如果有无效的提交，发送评论并退出
 if [ $INVALID_COUNT -gt 0 ]; then
     # 准备评论内容
-    COMMENT_BODY=$(cat <<EOF
-{
-    "body": "## ❌ 提交信息格式检查失败
+    comment_text="## ❌ 提交信息格式检查失败
 
 发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。
 
@@ -81,27 +97,19 @@ ${COMMIT_REGEX}
 2. 或者创建新的提交来替换不规范的提交
 
 需要帮助？请参考 [Conventional Commits](https://www.conventionalcommits.org/) 规范。"
-}
-EOF
-)
 
     # 发送评论
-    post_comment "$COMMENT_BODY"
+    post_comment "$comment_text"
     
     echo "❌ 提交信息格式检查失败。详细信息已添加到 PR 评论中。"
     exit 1
 else
-    COMMENT_BODY=$(cat <<EOF
-{
-    "body": "## ✅ 提交信息格式检查通过
+    comment_text="## ✅ 提交信息格式检查通过
 
 所有 ${TOTAL_COMMITS} 个提交都符合规范要求。做得很好！"
-}
-EOF
-)
     
     # 发送成功评论
-    post_comment "$COMMENT_BODY"
+    post_comment "$comment_text"
     
     echo "✅ 所有提交信息格式正确。"
     exit 0
