@@ -25,11 +25,11 @@ COMMITS_JSON=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 if [[ "$COMMITS_JSON" == *"Not Found"* ]] || [[ "$COMMITS_JSON" == *"Bad credentials"* ]]; then
     echo "❌ 获取提交信息失败: $COMMITS_JSON"
     
-    # 设置输出变量
-    echo "commit_check_title=提交信息获取失败" >> $GITHUB_OUTPUT
-    echo "commit_check_summary=无法获取 PR 中的提交信息。" >> $GITHUB_OUTPUT
-    echo "commit_check_text=API 返回错误：$COMMITS_JSON" >> $GITHUB_OUTPUT
-    echo "commit_check_conclusion=failure" >> $GITHUB_OUTPUT
+    # 直接设置环境变量供后续使用
+    export commit_check_title="提交信息获取失败"
+    export commit_check_summary="无法获取 PR 中的提交信息。"
+    export commit_check_text="API 返回错误：$COMMITS_JSON"
+    export commit_check_conclusion="failure"
     
     exit 1
 fi
@@ -72,11 +72,11 @@ else
     echo "❌ API 返回非数组结构，可能是错误。请检查 GITHUB_TOKEN 权限。"
     echo "$COMMITS_JSON" | jq '.'
     
-    # 设置输出变量
-    echo "commit_check_title=提交信息解析失败" >> $GITHUB_OUTPUT
-    echo "commit_check_summary=API 返回的数据结构不正确。" >> $GITHUB_OUTPUT
-    echo "commit_check_text=API 返回了非数组结构：\`\`\`json\n$COMMITS_JSON\n\`\`\`" >> $GITHUB_OUTPUT
-    echo "commit_check_conclusion=failure" >> $GITHUB_OUTPUT
+    # 直接设置环境变量供后续使用
+    export commit_check_title="提交信息解析失败"
+    export commit_check_summary="API 返回的数据结构不正确。"
+    export commit_check_text="API 返回了非数组结构：\`\`\`json\n$COMMITS_JSON\n\`\`\`"
+    export commit_check_conclusion="failure"
     
     exit 1
 fi
@@ -114,13 +114,11 @@ ${COMMIT_REGEX}
 
 需要帮助？请参考 [Conventional Commits](https://www.conventionalcommits.org/) 规范。"
 
-    # 设置输出变量
-    echo "commit_check_title=提交信息格式检查失败" >> $GITHUB_OUTPUT
-    echo "commit_check_summary=发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。" >> $GITHUB_OUTPUT
-    echo "commit_check_text<<EOF" >> $GITHUB_OUTPUT
-    echo "$report_text" >> $GITHUB_OUTPUT
-    echo "EOF" >> $GITHUB_OUTPUT
-    echo "commit_check_conclusion=failure" >> $GITHUB_OUTPUT
+    # 直接设置环境变量供后续使用
+    export commit_check_title="提交信息格式检查失败"
+    export commit_check_summary="发现 ${INVALID_COUNT}/${TOTAL_COMMITS} 个提交信息格式不符合规范。"
+    export commit_check_text="$report_text"
+    export commit_check_conclusion="failure"
     
     echo "❌ 提交信息格式检查失败。"
     
@@ -137,13 +135,11 @@ else
 
 所有 ${TOTAL_COMMITS} 个提交都符合规范要求。做得很好！"
 
-    # 设置输出变量
-    echo "commit_check_title=提交信息格式检查通过" >> $GITHUB_OUTPUT
-    echo "commit_check_summary=所有 ${TOTAL_COMMITS} 个提交都符合规范要求。" >> $GITHUB_OUTPUT
-    echo "commit_check_text<<EOF" >> $GITHUB_OUTPUT
-    echo "$report_text" >> $GITHUB_OUTPUT
-    echo "EOF" >> $GITHUB_OUTPUT
-    echo "commit_check_conclusion=success" >> $GITHUB_OUTPUT
+    # 直接设置环境变量供后续使用
+    export commit_check_title="提交信息格式检查通过"
+    export commit_check_summary="所有 ${TOTAL_COMMITS} 个提交都符合规范要求。"
+    export commit_check_text="$report_text"
+    export commit_check_conclusion="success"
     
     echo "✅ 所有提交信息格式正确。"
     exit 0

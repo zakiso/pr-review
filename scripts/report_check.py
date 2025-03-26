@@ -61,33 +61,41 @@ def create_check_run(title, summary, text, conclusion):
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='提交检查结果到 GitHub Checks API')
-    parser.add_argument('--title', required=True, help='检查结果标题')
-    parser.add_argument('--summary', required=True, help='检查结果摘要')
-    parser.add_argument('--text', required=True, help='检查结果详细文本')
-    parser.add_argument('--conclusion', required=True, 
+    parser.add_argument('--title', required=False, default="验证检查", help='检查结果标题')
+    parser.add_argument('--summary', required=False, default="执行了验证检查。", help='检查结果摘要')
+    parser.add_argument('--text', required=False, default="没有详细信息可用。", help='检查结果详细文本')
+    parser.add_argument('--conclusion', required=False, default="neutral", 
                         choices=['success', 'failure', 'neutral', 'cancelled', 'skipped', 'timed_out'],
                         help='检查结果结论')
     
     args = parser.parse_args()
     
+    # 检查参数是否为空，如果为空则使用默认值
+    title = args.title if args.title else "验证检查"
+    summary = args.summary if args.summary else "执行了验证检查。"
+    text = args.text if args.text else "没有详细信息可用。"
+    conclusion = args.conclusion if args.conclusion else "neutral"
+    
+    print(f"DEBUG: 使用以下参数创建检查: 标题='{title}', 结论='{conclusion}'")
+    
     success = create_check_run(
-        title=args.title,
-        summary=args.summary,
-        text=args.text,
-        conclusion=args.conclusion
+        title=title,
+        summary=summary,
+        text=text,
+        conclusion=conclusion
     )
     
     if not success:
         print("WARNING: 无法提交检查结果，但仍将继续")
         # 打印检查结果以便查看
         print("\n===== 检查结果 =====")
-        print(f"标题: {args.title}")
-        print(f"结论: {args.conclusion}")
-        print(f"摘要: {args.summary}")
-        print(f"详细内容:\n{args.text}")
+        print(f"标题: {title}")
+        print(f"结论: {conclusion}")
+        print(f"摘要: {summary}")
+        print(f"详细内容:\n{text}")
         print("=====================\n")
     
-    sys.exit(0 if success or args.conclusion == 'success' else 1)
+    sys.exit(0 if success or conclusion == 'success' else 1)
 
 if __name__ == "__main__":
     main() 

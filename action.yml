@@ -95,22 +95,20 @@ runs:
     - name: Check commit messages
       id: check_commits
       shell: bash
-      run: bash ${{ github.action_path }}/scripts/check_commits.sh
+      run: |
+        bash ${{ github.action_path }}/scripts/check_commits.sh
+        # 在这里直接进行提交检查结果的报告
+        python ${{ github.action_path }}/scripts/report_check.py \
+          --title "${commit_check_title:-提交检查}" \
+          --summary "${commit_check_summary:-验证了提交信息格式。}" \
+          --text "${commit_check_text:-没有详细的检查信息。}" \
+          --conclusion "${commit_check_conclusion:-neutral}"
       env:
         COMMIT_REGEX: ${{ inputs.commit-regex }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO_FULL_NAME: ${{ github.repository }}
         IGNORE_COMMIT_CHECK: ${{ inputs.ignore-commit-check }}
-
-    # 报告提交检查结果
-    - name: Report commit check results
-      if: always()
-      shell: bash
-      run: python ${{ github.action_path }}/scripts/report_check.py --title "${{ steps.check_commits.outputs.commit_check_title }}" --summary "${{ steps.check_commits.outputs.commit_check_summary }}" --text "${{ steps.check_commits.outputs.commit_check_text }}" --conclusion "${{ steps.check_commits.outputs.commit_check_conclusion }}"
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        REPO_FULL_NAME: ${{ github.repository }}
         GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         CHECK_NAME: 'Commit Format Check'
 
@@ -118,20 +116,18 @@ runs:
     - name: Check PR format
       id: check_pr
       shell: bash
-      run: python ${{ github.action_path }}/scripts/check_pr.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
+      run: |
+        python ${{ github.action_path }}/scripts/check_pr.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
+        # 在这里直接进行PR检查结果的报告
+        python ${{ github.action_path }}/scripts/report_check.py \
+          --title "${pr_check_title:-PR格式检查}" \
+          --summary "${pr_check_summary:-验证了PR的格式。}" \
+          --text "${pr_check_text:-没有详细的检查信息。}" \
+          --conclusion "${pr_check_conclusion:-neutral}"
       env:
         PR_TITLE_REGEX: ${{ inputs.pr-title-regex }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        REPO_FULL_NAME: ${{ github.repository }}
-
-    # 报告PR检查结果
-    - name: Report PR check results
-      if: always()
-      shell: bash
-      run: python ${{ github.action_path }}/scripts/report_check.py --title "${{ steps.check_pr.outputs.pr_check_title }}" --summary "${{ steps.check_pr.outputs.pr_check_summary }}" --text "${{ steps.check_pr.outputs.pr_check_text }}" --conclusion "${{ steps.check_pr.outputs.pr_check_conclusion }}"
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
         REPO_FULL_NAME: ${{ github.repository }}
         GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         CHECK_NAME: 'PR Format Check'
@@ -141,21 +137,19 @@ runs:
       if: inputs.skip-llm-check != 'true'
       id: llm_check
       shell: bash
-      run: python ${{ github.action_path }}/scripts/llm_check.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
+      run: |
+        python ${{ github.action_path }}/scripts/llm_check.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
+        # 在这里直接进行LLM检查结果的报告
+        python ${{ github.action_path }}/scripts/report_check.py \
+          --title "${llm_check_title:-PR质量评估}" \
+          --summary "${llm_check_summary:-评估了PR的质量。}" \
+          --text "${llm_check_text:-没有详细的评估信息。}" \
+          --conclusion "${llm_check_conclusion:-neutral}"
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         MODEL_NAME: ${{ inputs.model-name }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        REPO_FULL_NAME: ${{ github.repository }}
-
-    # 报告LLM检查结果
-    - name: Report LLM check results
-      if: inputs.skip-llm-check != 'true' && always()
-      shell: bash
-      run: python ${{ github.action_path }}/scripts/report_check.py --title "${{ steps.llm_check.outputs.llm_check_title }}" --summary "${{ steps.llm_check.outputs.llm_check_summary }}" --text "${{ steps.llm_check.outputs.llm_check_text }}" --conclusion "${{ steps.llm_check.outputs.llm_check_conclusion }}"
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
         REPO_FULL_NAME: ${{ github.repository }}
         GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         CHECK_NAME: 'PR Quality Check'
@@ -165,7 +159,14 @@ runs:
       if: inputs.skip-code-review != 'true'
       id: code_review
       shell: bash
-      run: python ${{ github.action_path }}/scripts/code_review.py
+      run: |
+        python ${{ github.action_path }}/scripts/code_review.py
+        # 在这里直接进行代码审查结果的报告
+        python ${{ github.action_path }}/scripts/report_check.py \
+          --title "${code_review_title:-代码审查}" \
+          --summary "${code_review_summary:-审查了代码变更。}" \
+          --text "${code_review_text:-没有详细的审查信息。}" \
+          --conclusion "${code_review_conclusion:-neutral}"
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         MODEL_NAME: ${{ inputs.model-name }}
@@ -174,14 +175,5 @@ runs:
         REPO_FULL_NAME: ${{ github.repository }}
         MAX_FILES_TO_REVIEW: ${{ inputs.max-files-to-review }}
         REVIEW_THRESHOLD: ${{ inputs.review-threshold }}
-
-    # 报告代码审查结果
-    - name: Report code review results
-      if: inputs.skip-code-review != 'true' && always()
-      shell: bash
-      run: python ${{ github.action_path }}/scripts/report_check.py --title "${{ steps.code_review.outputs.code_review_title }}" --summary "${{ steps.code_review.outputs.code_review_summary }}" --text "${{ steps.code_review.outputs.code_review_text }}" --conclusion "${{ steps.code_review.outputs.code_review_conclusion }}"
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        REPO_FULL_NAME: ${{ github.repository }}
         GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         CHECK_NAME: 'Code Review'
