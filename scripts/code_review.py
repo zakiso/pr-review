@@ -19,8 +19,11 @@ def get_pr_diff():
     repo = os.environ.get('REPO_FULL_NAME')
     
     if not all([token, pr_number, repo]):
-        print("❌ Required environment variables are not set")
+        print("❌ 缺少必要的环境变量")
         sys.exit(1)
+    
+    print(f"DEBUG: 获取 PR #{pr_number} 的差异内容，仓库: {repo}")
+    print(f"DEBUG: 使用的令牌 (前4位): {token[:4]}...")
     
     url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
     headers = {
@@ -30,17 +33,29 @@ def get_pr_diff():
     
     try:
         response = requests.get(url, headers=headers)
+        print(f"DEBUG: 响应状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            print(f"INFO: 成功获取差异，内容长度: {len(response.text)} 字符")
+            return response.text
+        
         response.raise_for_status()
-        return response.text
     except Exception as e:
-        print(f"Error fetching PR diff: {e}")
+        print(f"ERROR: 获取 PR 差异失败: {e}")
+        if hasattr(e, 'response') and e.response:
+            print(f"响应状态: {e.response.status_code}")
+            print(f"响应内容: {e.response.text}")
         sys.exit(1)
+    
+    return None
 
 def get_changed_files():
     """Fetch the list of changed files in the PR"""
     token = os.environ.get('GITHUB_TOKEN')
     pr_number = os.environ.get('PR_NUMBER')
     repo = os.environ.get('REPO_FULL_NAME')
+    
+    print(f"DEBUG: 获取 PR #{pr_number} 中更改的文件")
     
     url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files"
     headers = {
@@ -50,11 +65,22 @@ def get_changed_files():
     
     try:
         response = requests.get(url, headers=headers)
+        print(f"DEBUG: 响应状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            files = response.json()
+            print(f"INFO: 找到 {len(files)} 个更改的文件")
+            return files
+        
         response.raise_for_status()
-        return response.json()
     except Exception as e:
-        print(f"Error fetching changed files: {e}")
+        print(f"ERROR: 获取更改文件失败: {e}")
+        if hasattr(e, 'response') and e.response:
+            print(f"响应状态: {e.response.status_code}")
+            print(f"响应内容: {e.response.text[:200]}...")
         sys.exit(1)
+    
+    return []
 
 def post_review_comment(body, path=None, line=None, side=None):
     """Post a review comment to the PR"""
@@ -62,36 +88,52 @@ def post_review_comment(body, path=None, line=None, side=None):
     pr_number = os.environ.get('PR_NUMBER')
     repo = os.environ.get('REPO_FULL_NAME')
     
-    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+    if not all([token, pr_number, repo]):
+        print("ERROR: 缺少必要的环境变量")
+        return False
+    
+    print(f"DEBUG: 发送评论到 PR #{pr_number}")
+    
+    # 输出评论内容 (用于调试)
+    print("INFO: 将发送以下评论到 PR (如果有权限):")
+    print("---BEGIN COMMENT---")
+    print(body[:200] + "..." if len(body) > 200 else body)
+    print("---END COMMENT---")
+    
+    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "Authorization": f"token {token}",
+        "Content-Type": "application/json"
     }
     
     # 如果没有指定文件和行号，发送一般性评论
     if not all([path, line]):
         data = {
-            "body": body,
-            "event": "COMMENT"
+            "body": body
         }
     else:
-        # 发送针对具体代码行的评论
+        # 对于行内评论，我们需要使用 issue_comment API 而不是 review API
         data = {
-            "body": body,
-            "event": "COMMENT",
-            "comments": [{
-                "path": path,
-                "line": line,
-                "side": side or "RIGHT",
-                "body": body
-            }]
+            "body": f"**文件: {path}, 行 {line}**\n\n{body}"
         }
     
     try:
         response = requests.post(url, headers=headers, json=data)
+        print(f"DEBUG: 响应状态码: {response.status_code}")
+        
+        if response.status_code == 201:
+            print("INFO: 评论发送成功")
+            return True
+            
         response.raise_for_status()
     except Exception as e:
-        print(f"Error posting review comment: {e}")
+        print(f"ERROR: 发送评论失败: {e}")
+        if hasattr(e, 'response') and e.response:
+            print(f"响应状态: {e.response.status_code}")
+            print(f"响应内容: {e.response.text}")
+    
+    return False
 
 def review_code_with_llm(file_content, file_name):
     """使用 LLM 审查代码"""
@@ -101,6 +143,8 @@ def review_code_with_llm(file_content, file_name):
     if not api_key:
         print("❌ Error: OPENAI_API_KEY environment variable is not set")
         sys.exit(1)
+    
+    print(f"DEBUG: 使用 {model_name} 审查文件: {file_name}")
     
     client = OpenAI(api_key=api_key)
     
@@ -137,6 +181,7 @@ def review_code_with_llm(file_content, file_name):
     
     for retry_count, delay in enumerate(retry_delays):
         try:
+            print(f"DEBUG: 尝试 #{retry_count+1} 调用 OpenAI API")
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
@@ -145,19 +190,22 @@ def review_code_with_llm(file_content, file_name):
             )
             
             content = response.choices[0].message.content
+            print("INFO: API 调用成功，分析结果已返回")
             return json.loads(content)
             
         except Exception as e:
             if retry_count == len(retry_delays) - 1:
-                print(f"Error in LLM review: {e}")
+                print(f"ERROR: LLM 审查出错: {e}")
                 return None
-            print(f"Retry {retry_count + 1}/{len(retry_delays)} after {delay}s: {e}")
+            print(f"WARNING: 重试 {retry_count + 1}/{len(retry_delays)}, {delay}秒后: {e}")
             time.sleep(delay)
+    
+    return None
 
 def format_review_comment(file_name, review_result):
     """格式化审查结果为 Markdown 格式"""
     if not review_result:
-        return f"⚠️ Failed to review {file_name}"
+        return f"⚠️ 未能成功审查 {file_name}"
     
     emoji_map = {
         "bug": "🐛",
@@ -208,69 +256,80 @@ def main():
     # 获取 PR 中更改的文件
     changed_files = get_changed_files()
     
-    # 获取 PR 的 diff
+    # 获取 PR 的 diff (用于参考)
     diff = get_pr_diff()
     
     total_issues = 0
     high_severity_issues = 0
+    max_files = int(os.environ.get('MAX_FILES_TO_REVIEW', 10))
+    
+    print(f"DEBUG: 将审查最多 {max_files} 个文件")
     
     # 对每个更改的文件进行审查
-    for file in changed_files:
+    reviewed_files = 0
+    for file in changed_files[:max_files]:
         file_name = file['filename']
         print(f"📝 正在审查文件: {file_name}")
         
         # 跳过二进制文件、删除的文件等
         if file['status'] == 'removed' or file.get('binary', False):
+            print(f"INFO: 跳过文件 {file_name} (状态: {file['status']})")
             continue
         
         # 获取文件内容
         try:
+            print(f"DEBUG: 获取文件内容: {file['raw_url']}")
             response = requests.get(file['raw_url'])
-            response.raise_for_status()
+            if response.status_code != 200:
+                print(f"WARNING: 无法获取文件内容，状态码: {response.status_code}")
+                continue
+                
             file_content = response.text
+            print(f"INFO: 成功获取文件内容，长度: {len(file_content)} 字符")
         except Exception as e:
-            print(f"Error fetching file content: {e}")
+            print(f"ERROR: 获取文件内容失败: {e}")
             continue
         
         # 使用 LLM 进行代码审查
         review_result = review_code_with_llm(file_content, file_name)
+        reviewed_files += 1
         
         if review_result:
             # 统计问题
             file_issues = len(review_result['issues'])
             total_issues += file_issues
-            high_severity_issues += sum(1 for issue in review_result['issues'] 
-                                     if issue['severity'] == 'high')
+            file_high_issues = sum(1 for issue in review_result['issues'] 
+                                 if issue['severity'] == 'high')
+            high_severity_issues += file_high_issues
+            
+            print(f"INFO: 发现 {file_issues} 个问题，其中 {file_high_issues} 个高严重性问题")
             
             # 发送审查评论
             comment = format_review_comment(file_name, review_result)
-            post_review_comment(comment, file_name)
+            post_result = post_review_comment(comment)
             
-            # 对于每个具体问题，添加行内评论
-            for issue in review_result['issues']:
-                if issue.get('line_number'):
-                    issue_comment = (f"{emoji_map.get(issue['type'], '❓')} "
-                                   f"{severity_map.get(issue['severity'], '❓')} "
-                                   f"**{issue['type'].title()}**: {issue['description']}\n\n"
-                                   f"建议: {issue['suggestion']}")
-                    post_review_comment(issue_comment, file_name, 
-                                      int(issue['line_number']))
+            if not post_result:
+                print(f"WARNING: 无法发送文件 {file_name} 的审查结果")
     
     # 发送总结评论
     summary = f"""
 # 代码审查总结
 
-- 审查的文件数: {len(changed_files)}
+- 审查的文件数: {reviewed_files}
 - 发现的问题总数: {total_issues}
 - 高严重性问题: {high_severity_issues}
 
 {'⚠️ 发现高严重性问题，请在合并前解决。' if high_severity_issues > 0 else '✅ 没有发现高严重性问题。'}
 """
-    post_review_comment(summary)
+    summary_result = post_review_comment(summary)
+    if not summary_result:
+        print("WARNING: 无法发送审查总结评论")
+        print("审查总结内容如下:\n")
+        print(summary)
     
     # 如果有高严重性问题，以非零状态退出
     if high_severity_issues > 0:
-        print("❌ 发现高严重性问题，请查看 PR 评论获取详细信息。")
+        print(f"❌ 发现 {high_severity_issues} 个高严重性问题，请查看 PR 评论获取详细信息。")
         sys.exit(1)
     else:
         print("✅ 代码审查完成。")

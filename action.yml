@@ -40,6 +40,10 @@ inputs:
     description: 'Minimum score (1-10) required to pass code review'
     default: '6'
     required: false
+  github-token:
+    description: 'GitHub token with permissions to comment on PRs'
+    default: '${{ github.token }}'
+    required: false
 
 runs:
   using: "composite"
@@ -67,12 +71,21 @@ runs:
         # 安装必要的依赖，不依赖 requirements.txt
         pip install 'openai>=1.0.0' 'requests>=2.31.0'
 
+    - name: Display debug info
+      shell: bash
+      run: |
+        echo "DEBUG: GitHub context:"
+        echo "PR Number: ${{ github.event.pull_request.number }}"
+        echo "Repo: ${{ github.repository }}"
+        echo "Token type: ${{ github.token != '' && 'Available' || 'Missing' }}"
+        echo "Custom token type: ${{ inputs.github-token != '' && 'Available' || 'Missing' }}"
+
     - name: Check commit messages
       shell: bash
       run: bash ${{ github.action_path }}/scripts/check_commits.sh
       env:
         COMMIT_REGEX: ${{ inputs.commit-regex }}
-        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO_FULL_NAME: ${{ github.repository }}
 
@@ -81,7 +94,7 @@ runs:
       run: python ${{ github.action_path }}/scripts/check_pr.py "${{ github.event.pull_request.title }}" "${{ github.event.pull_request.body || '' }}"
       env:
         PR_TITLE_REGEX: ${{ inputs.pr-title-regex }}
-        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO_FULL_NAME: ${{ github.repository }}
 
@@ -92,7 +105,7 @@ runs:
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         MODEL_NAME: ${{ inputs.model-name }}
-        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO_FULL_NAME: ${{ github.repository }}
 
@@ -103,7 +116,7 @@ runs:
       env:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         MODEL_NAME: ${{ inputs.model-name }}
-        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO_FULL_NAME: ${{ github.repository }}
         MAX_FILES_TO_REVIEW: ${{ inputs.max-files-to-review }}

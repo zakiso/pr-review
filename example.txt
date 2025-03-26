@@ -19,6 +19,8 @@ jobs:
         uses: your-username/pr-check-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # 确保传递有权限的 token
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           # Optional customizations:
           # commit-regex: '^(feat|fix|docs|style|refactor|test|chore|perf)(\(.+\))?: [A-Z].+'
           # pr-title-regex: '^\[(Feature|Fix|Docs|Refactor|Test|Chore)\] .+'
